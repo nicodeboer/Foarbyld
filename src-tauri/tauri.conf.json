@@ -35,6 +35,7 @@
       "icons/icon.ico"
     ],
     "resources": ["resources/pdfium/*"],
+    "macOS": { "signingIdentity": "-" },
     "category": "Productivity",
     "shortDescription": "Cross-platform document and image previewer",
     "fileAssociations": [
