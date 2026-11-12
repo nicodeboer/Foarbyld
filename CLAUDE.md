@@ -57,7 +57,7 @@ Linux needs: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindi
   cached by byte budget (256 MB). Canvas intrinsic size is set at draw time so a zoom shows the
   old bitmap scaled until the re-render lands.
 - Bumping PDFium: change `TAG` and all SHA-256 values together in `scripts/fetch-pdfium.mjs`.
-  Linux/Windows (x64, arm64) are release targets; macOS targets exist for development only.
+  Linux/Windows (x64, arm64) are release targets; macOS arm64 is released as an ad-hoc signed, not notarized .dmg (`release.yml`); macOS x64 is development only.
 - Dependencies must stay Apache-2.0-compatible: no GPL/AGPL (this is why MuPDF was rejected, ADR 0002).
 
 ## The performance gate (ADR 0001)

@@ -19,7 +19,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest]
+        include:
+          - os: ubuntu-24.04
+          - os: windows-latest
+          # macos-latest is Apple Silicon; fetch-pdfium picks the arm64 dylib from the host arch.
+          - os: macos-latest
+            args: --target aarch64-apple-darwin --bundles dmg
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,7 +68,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Foarbyld ${{ github.ref_name }}
           releaseBody: |
-            Prototype build. See the assets below for Linux (.deb, .rpm, .AppImage) and Windows (.msi, .exe).
-            These builds are unsigned.
+            Prototype build. See the assets below for Linux (.deb, .rpm, .AppImage), Windows (.msi, .exe)
+            and macOS (.dmg, Apple Silicon only).
+            These builds are unsigned. The macOS app is only ad-hoc signed and not notarized:
+            on first launch right-click the app and choose Open (or run `xattr -cr Foarbyld.app`).
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ matrix.args }}
