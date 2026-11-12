@@ -1,0 +1,13 @@
+node_modules/
+dist/
+target/
+testdata/
+*.log
+
+# PDFium binaries are fetched by `npm run fetch:pdfium`
+src-tauri/resources/pdfium/*
+!src-tauri/resources/pdfium/README.txt
+
+# IDE / OS
+.idea/
+.DS_Store

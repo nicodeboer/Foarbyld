@@ -1,0 +1,13 @@
+[package]
+name = "pdf-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "PDF engine for Folio: PDFium wrapper without any UI dependency"
+
+[dependencies]
+# PDFium runs on a single worker thread (see lib.rs), so the crate's
+# `thread_safe` mutex wrapper and the `image` integration are not needed.
+pdfium-render = { version = "0.8", default-features = false, features = ["pdfium_latest"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
