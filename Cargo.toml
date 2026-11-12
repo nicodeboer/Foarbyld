@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/pdf-core", "src-tauri"]
+members = ["crates/pdf-core", "crates/md-core", "src-tauri"]
 
 [profile.release]
 lto = "thin"

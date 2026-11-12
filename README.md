@@ -1,21 +1,22 @@
 # Foarbyld
 
 An open-source document and image previewer for Windows and Linux, in the
-spirit of macOS Preview. This repository is the **prototype that decides
-[ADR 0001](docs/adr/0001-tauri-as-application-shell.md)**: can Tauri + a
-PDFium-backed renderer scroll and zoom a large PDF smoothly on WebKitGTK?
+spirit of macOS Preview (it also runs on macOS). It is a prototype built on
+Tauri and a PDFium-backed renderer; see
+[ADR 0001](docs/adr/0001-tauri-as-application-shell.md).
 
 Stack: Tauri 2 · Vue 3 + TypeScript · Rust · PDFium. See [docs/adr](docs/adr).
 
-Features so far: PDF viewing (zoom, virtual scrolling), images (PNG, JPEG, GIF,
+Features so far: PDF viewing (zoom, virtual scrolling), Markdown (`.md`), images (PNG, JPEG, GIF,
 WebP, BMP, TIFF), text selection and copy, find in document (Ctrl/Cmd+F), page thumbnail sidebar, drag & drop.
 
 ## Layout
 
 ```
 crates/pdf-core/   PDFium engine on a worker thread, no UI dependencies (unit-testable)
-src-tauri/         Tauri shell: commands open_document / render_page / page_text / search_text / close_pdf
-src/               Vue UI: virtual-scrolling viewer, zoom, text selection, find, drag & drop, benchmark
+crates/md-core/    Markdown -> sanitized HTML (pulldown-cmark + ammonia), no UI dependencies
+src-tauri/         Tauri shell: commands open_document / open_markdown / render_page / page_text / search_text / close_pdf
+src/               Vue UI: virtual-scrolling viewer, zoom, text selection, find, drag & drop, Markdown viewer
 scripts/           fetch-pdfium.mjs (pinned + SHA-256 verified), make-test-pdf.mjs
 docs/adr/          Architecture decision records
 ```
@@ -50,24 +51,17 @@ cargo test -p pdf-core -- --nocapture
 On Apple Silicon with an x86_64 Rust toolchain, add `--target aarch64-apple-darwin`
 (the fetched PDFium dylib is arm64).
 
+Markdown renderer tests (no PDFium needed):
+
+```sh
+cargo test -p md-core
+```
+
 Frontend tests (selection / hit-testing helpers):
 
 ```sh
 npm test
 ```
-
-## The performance gate (ADR 0001)
-
-On each target OS (Windows 11, Ubuntu LTS, Fedora, ideally also on a HiDPI
-screen and on an arm64 device):
-
-1. `npm run tauri build` (or `tauri dev --release`), open `testdata/200-pages.pdf`.
-2. Click **Benchmark**. It scrolls at 4000 px/s, then zooms 100% → 200%.
-3. Paste the JSON into the ADR (or an issue).
-
-Suggested pass criteria: first page < 500 ms, frame time p95 < 25 ms, slow
-frames (> 50 ms) < 1%, zoom settle < 1 s. If Linux fails these, supersede
-ADR 0001 with Electron or Qt.
 
 ## Releasing
 

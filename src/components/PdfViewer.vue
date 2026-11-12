@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, shallowRef, watch } from "vue";
 import { fetchPageText, renderPage, type DocInfo, type SearchMatch } from "../lib/api";
-import { summarizeFrames, summarizeRenders, type BenchmarkResult } from "../lib/stats";
 import {
   caretAt,
   isEmptySelection,
@@ -101,10 +100,8 @@ const canvases = new Map<number, HTMLCanvasElement>();
 const drawnWidth = new Map<number, number>(); // page -> pixel width currently on the canvas
 const cache = new Map<string, ImageBitmap>(); // insertion order = LRU order
 let cacheBytes = 0;
-const renderMs: number[] = [];
 let pumping = false;
 let timer: number | undefined;
-let timerActive = false;
 let firstRenderDone = false;
 
 const pixelWidth = (i: number) => Math.max(1, Math.round(layout.value.widths[i] * window.devicePixelRatio));
@@ -147,9 +144,7 @@ function clearCache() {
 
 function schedule(delay: number) {
   clearTimeout(timer);
-  timerActive = true;
   timer = window.setTimeout(() => {
-    timerActive = false;
     void pump();
   }, delay);
 }
@@ -194,10 +189,8 @@ async function renderOne(doc: DocInfo, i: number) {
   try {
     let bmp = cacheGet(key);
     if (!bmp) {
-      const t0 = performance.now();
       const r = await renderPage(doc.id, i, w);
       bmp = await createImageBitmap(new ImageData(r.pixels, r.width, r.height));
-      renderMs.push(performance.now() - t0);
       cachePut(key, bmp);
     }
     if (props.doc?.id !== doc.id) return; // document was closed meanwhile
@@ -263,7 +256,6 @@ watch(
     clearCache();
     canvases.clear();
     drawnWidth.clear();
-    renderMs.length = 0;
     firstRenderDone = false;
     await nextTick();
     if (scroller.value) scroller.value.scrollTop = 0;
@@ -596,7 +588,7 @@ watch(
 );
 watch([first, last], prefetchVisibleText);
 
-// ---- exposed API (toolbar + benchmark) -----------------------------------------
+// ---- exposed API (toolbar) -----------------------------------------
 function fitWidthZoom(): number {
   const doc = props.doc;
   if (!doc) return 1;
@@ -604,78 +596,7 @@ function fitWidthZoom(): number {
   return (viewportW.value - 2 * GAP) / (maxPt * PT_TO_CSS);
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Resolves (with the wait in ms) once every visible page is drawn; -1 on timeout. */
-async function waitIdle(timeoutMs = 30000): Promise<number> {
-  const t0 = performance.now();
-  while (performance.now() - t0 < timeoutMs) {
-    if (!pumping && !timerActive && nextWanted() === null) return performance.now() - t0;
-    await sleep(16);
-  }
-  return -1;
-}
-
-/**
- * Objective performance gate for ADR 0001: scrolls the document at a fixed
- * speed while recording frame times, then stresses zooming.
- */
-async function runBenchmark(firstPageMs: number | null): Promise<BenchmarkResult> {
-  const el = scroller.value;
-  const doc = props.doc;
-  if (!el || !doc) throw new Error("No document open");
-
-  el.scrollTop = 0;
-  scrollTop.value = 0;
-  await waitIdle();
-  renderMs.length = 0;
-
-  const speed = 4000; // px/s: a fast flick through the document
-  const distance = Math.max(0, Math.min(layout.value.total - viewportH.value, 120_000));
-  const duration = (distance / speed) * 1000;
-  const frames: number[] = [];
-  const t0 = performance.now();
-  let prev = t0;
-  await new Promise<void>((resolve) => {
-    const step = (now: number) => {
-      frames.push(now - prev);
-      prev = now;
-      const y = Math.min(distance, ((now - t0) / 1000) * speed);
-      el.scrollTop = y;
-      scrollTop.value = y;
-      if (now - t0 < duration) requestAnimationFrame(step);
-      else resolve();
-    };
-    requestAnimationFrame(step);
-  });
-  const scroll = summarizeFrames(frames, distance, performance.now() - t0);
-  const render = summarizeRenders(renderMs);
-  const scrollSettleMs = Math.round(await waitIdle());
-
-  // Zoom stress: 100% -> 200%, measure time until the viewport is crisp again.
-  const startZoom = props.zoom;
-  emit("zoom-by", 2 / startZoom);
-  const z0 = performance.now();
-  await nextTick();
-  await sleep(0);
-  const w = await waitIdle();
-  const zoomSettleMs = Math.round(w < 0 ? -1 : performance.now() - z0);
-  emit("zoom-by", startZoom / 2);
-
-  return {
-    timestamp: new Date().toISOString(),
-    userAgent: navigator.userAgent,
-    devicePixelRatio: window.devicePixelRatio,
-    pageCount: doc.pageCount,
-    firstPageMs: firstPageMs === null ? null : Math.round(firstPageMs),
-    scroll,
-    render,
-    zoomSettleMs,
-    scrollSettleMs,
-  };
-}
-
-defineExpose({ fitWidthZoom, runBenchmark, scrollToPage });
+defineExpose({ fitWidthZoom, scrollToPage });
 </script>
 
 <template>

@@ -50,6 +50,23 @@ fn open_document(state: State<'_, AppState>, path: String) -> Result<DocInfo, St
     state.engine()?.open(Path::new(&path)).map_err(|e| e.to_string())
 }
 
+/// Largest Markdown file we render; anything bigger is almost certainly not prose.
+const MAX_MARKDOWN_BYTES: u64 = 50 * 1024 * 1024;
+
+/// Renders a Markdown file to sanitized HTML. Independent of PDFium, so it
+/// works even when the PDF engine failed to load.
+#[tauri::command(async)]
+fn open_markdown(path: String) -> Result<String, String> {
+    let path = Path::new(&path);
+    let len = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
+    if len > MAX_MARKDOWN_BYTES {
+        return Err(format!("File is too large to render ({} MB)", len / (1024 * 1024)));
+    }
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&bytes);
+    Ok(md_core::render(&text, path.parent()))
+}
+
 /// Returns raw bytes: `[width: u32 LE][height: u32 LE][RGBA pixels...]`.
 /// Raw binary responses avoid JSON/base64 overhead on the IPC channel.
 #[tauri::command(async)]
@@ -107,6 +124,7 @@ fn initial_file(state: State<'_, AppState>) -> Option<String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let engine = PdfEngine::new(&pdfium_search_dirs(app)).map_err(|e| e.to_string());
             app.manage(AppState {
@@ -117,6 +135,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             open_document,
+            open_markdown,
             page_text,
             search_text,
             render_page,

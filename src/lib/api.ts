@@ -24,12 +24,19 @@ export interface RenderedPage {
 
 export const PDF_EXTENSIONS = ["pdf"];
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tif", "tiff"];
-export const DOCUMENT_EXTENSIONS = [...PDF_EXTENSIONS, ...IMAGE_EXTENSIONS];
+export const MARKDOWN_EXTENSIONS = ["md", "markdown"];
+export const DOCUMENT_EXTENSIONS = [...PDF_EXTENSIONS, ...IMAGE_EXTENSIONS, ...MARKDOWN_EXTENSIONS];
 
-export const isSupportedFile = (path: string) =>
-  DOCUMENT_EXTENSIONS.includes(path.split(".").pop()?.toLowerCase() ?? "");
+const extensionOf = (path: string) => path.split(".").pop()?.toLowerCase() ?? "";
+
+export const isMarkdownFile = (path: string) => MARKDOWN_EXTENSIONS.includes(extensionOf(path));
+
+export const isSupportedFile = (path: string) => DOCUMENT_EXTENSIONS.includes(extensionOf(path));
 
 export const openDocument = (path: string) => invoke<DocInfo>("open_document", { path });
+
+/** Sanitized HTML for a Markdown file (rendered in Rust, independent of PDFium). */
+export const openMarkdown = (path: string) => invoke<string>("open_markdown", { path });
 
 export const closePdf = (doc: number) => invoke<void>("close_pdf", { doc });
 

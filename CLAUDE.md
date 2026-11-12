@@ -1,9 +1,9 @@
 # Foarbyld
 
 Open-source, cross-platform document and image previewer (think macOS Preview) for
-Windows and Linux. Apache-2.0. Currently a **prototype whose job is to decide
-ADR 0001**: can Tauri + a PDFium renderer scroll/zoom a large PDF smoothly on
-WebKitGTK (Linux)? Read `docs/adr/` before changing anything architectural.
+Windows and Linux (also built for macOS). Apache-2.0. Currently a prototype. ADR 0001
+(Tauri) is accepted without a Linux performance gate: the owner dropped it and the
+Benchmark code was removed. Read `docs/adr/` before changing anything architectural.
 
 ## Stack
 
@@ -11,10 +11,11 @@ Tauri 2 shell · Vue 3 + TypeScript (Vite) · Rust core · PDFium via `pdfium-re
 
 ```
 crates/pdf-core/   PDFium engine on its own worker thread; no UI deps; unit/integration tested
-src-tauri/         Tauri commands (open_document, render_page, page_text, search_text, close_pdf, engine_error, initial_file)
-src/               Vue UI: App.vue (toolbar, find bar), components/PdfViewer.vue (virtual scroll, selection, highlights, benchmark), components/ThumbnailSidebar.vue, lib/api.ts, lib/textLayer.ts (pure selection/hit-test helpers, vitest)
+crates/md-core/    Markdown -> sanitized HTML (pulldown-cmark + ammonia); no UI deps; unit tested (`cargo test -p md-core`)
+src-tauri/         Tauri commands (open_document, open_markdown, render_page, page_text, search_text, close_pdf, engine_error, initial_file)
+src/               Vue UI: App.vue (toolbar, find bar), components/PdfViewer.vue (virtual scroll, selection, highlights), components/MarkdownViewer.vue, components/ThumbnailSidebar.vue, lib/api.ts, lib/textLayer.ts (pure selection/hit-test helpers, vitest)
 scripts/           fetch-pdfium.mjs (pinned version + SHA-256), make-test-pdf.mjs
-docs/adr/          Architecture decision records (0001 Tauri, 0002 PDFium, 0003 Apache-2.0)
+docs/adr/          Architecture decision records (0001 Tauri, 0002 PDFium, 0003 Apache-2.0, 0004 Markdown)
 ```
 
 ## Commands
@@ -58,15 +59,11 @@ Linux needs: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindi
   old bitmap scaled until the re-render lands.
 - Bumping PDFium: change `TAG` and all SHA-256 values together in `scripts/fetch-pdfium.mjs`.
   Linux/Windows (x64, arm64) are release targets; macOS arm64 is released as an ad-hoc signed, not notarized .dmg (`release.yml`); macOS x64 is development only.
+- **Markdown** (ADR 0004) is rendered in Rust (`md-core`) and shown as DOM in `MarkdownViewer.vue`, separate from the
+  PDFium engine and its id space (`App.vue` holds `markdown` XOR `doc`). Output is sanitized by ammonia; local images are
+  inlined as `data:` URIs, remote images become links (CSP is `'self' data:`). Do not loosen this without updating the ADR.
+  Find uses `window.find`, so it works from Enter/Shift+Enter, not from the find field.
 - Dependencies must stay Apache-2.0-compatible: no GPL/AGPL (this is why MuPDF was rejected, ADR 0002).
-
-## The performance gate (ADR 0001)
-
-The **Benchmark** button scrolls the 200-page PDF at 4000 px/s and then zooms 100% -> 200%, and
-outputs JSON. Results must come from real Linux (WebKitGTK) and Windows machines, not Xvfb or macOS
-(macOS uses WKWebView, so it says nothing about the Linux risk). Suggested pass criteria: first page
-< 500 ms, frame time p95 < 25 ms, frames > 50 ms < 1%, zoom settle < 1 s. If Linux fails, supersede
-ADR 0001 with Electron or Qt.
 
 ## Conventions
 
@@ -77,5 +74,5 @@ ADR 0001 with Electron or Qt.
 
 ## Status / next steps
 
-Done: PDF open/render/zoom/scroll, drag & drop, benchmark, images (image-rs), text selection + copy, find (Ctrl/Cmd+F), thumbnail sidebar, CI workflow (Ubuntu + Windows; not yet run).
-Not yet: run the performance gate on real Linux/Windows; selection/find UI never exercised in the real webview on Linux; annotations; page reorder/merge; signing; packaging (Flatpak, winget, code signing).
+Done: PDF open/render/zoom/scroll, drag & drop, Markdown viewer, images (image-rs), text selection + copy, find (Ctrl/Cmd+F), thumbnail sidebar, CI workflow (Ubuntu + Windows; not yet run).
+Not yet: selection/find UI and the Markdown viewer never exercised in the real webview on Linux (Markdown find via `window.find` is untested on every platform); annotations; page reorder/merge; signing; packaging (Flatpak, winget, code signing).

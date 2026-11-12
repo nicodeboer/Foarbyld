@@ -1,0 +1,11 @@
+[package]
+name = "md-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Markdown to sanitized HTML for Foarbyld, without any UI dependency"
+
+[dependencies]
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+ammonia = "4"
+base64 = "0.22"

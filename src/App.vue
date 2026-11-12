@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import MarkdownViewer from "./components/MarkdownViewer.vue";
 import PdfViewer from "./components/PdfViewer.vue";
 import ThumbnailSidebar from "./components/ThumbnailSidebar.vue";
 import {
@@ -9,15 +10,17 @@ import {
   engineError,
   initialFile,
   IMAGE_EXTENSIONS,
+  isMarkdownFile,
   isSupportedFile,
+  MARKDOWN_EXTENSIONS,
   MAX_MATCHES,
   openDocument,
+  openMarkdown,
   PDF_EXTENSIONS,
   searchText,
   type DocInfo,
   type SearchMatch,
 } from "./lib/api";
-import type { BenchmarkResult } from "./lib/stats";
 
 const doc = shallowRef<DocInfo | null>(null);
 const fileName = ref("");
@@ -25,11 +28,12 @@ const zoom = ref(1);
 const error = ref<string | null>(null);
 const dragging = ref(false);
 const firstPageMs = ref<number | null>(null);
-const bench = ref<string | null>(null);
-const benchRunning = ref(false);
 const sidebarOpen = ref(true);
 const currentPage = ref(0);
 const viewer = ref<InstanceType<typeof PdfViewer> | null>(null);
+const mdViewer = ref<InstanceType<typeof MarkdownViewer> | null>(null);
+/** Rendered HTML of the open Markdown file; mutually exclusive with `doc`. */
+const markdown = ref<string | null>(null);
 
 let openStartedAt = 0;
 
@@ -37,6 +41,8 @@ const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 5;
 const setZoom = (z: number) => (zoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)));
 const zoomBy = (f: number) => setZoom(zoom.value * f);
+const hasContent = () => doc.value !== null || markdown.value !== null;
+const fitWidth = () => setZoom(viewer.value && doc.value ? viewer.value.fitWidthZoom() : 1);
 
 async function openPath(path: string) {
   error.value = null;
@@ -44,13 +50,22 @@ async function openPath(path: string) {
   const previous = doc.value;
   resetFind();
   try {
+    if (isMarkdownFile(path)) {
+      markdown.value = await openMarkdown(path);
+      doc.value = null;
+      fileName.value = path.split(/[\\/]/).pop() ?? path;
+      if (previous) void closePdf(previous.id);
+      setZoom(1);
+      return;
+    }
     openStartedAt = performance.now();
     const info = await openDocument(path);
+    markdown.value = null;
     doc.value = info;
     fileName.value = path.split(/[\\/]/).pop() ?? path;
     if (previous) void closePdf(previous.id);
     // Default to fit-width so the first view is sensible on any window size.
-    requestAnimationFrame(() => viewer.value && setZoom(viewer.value.fitWidthZoom()));
+    requestAnimationFrame(fitWidth);
   } catch (e) {
     error.value = String(e);
   }
@@ -60,8 +75,12 @@ async function chooseFile() {
   const picked = await open({
     multiple: false,
     filters: [
-      { name: "Documents and images", extensions: [...PDF_EXTENSIONS, ...IMAGE_EXTENSIONS] },
+      {
+        name: "Documents and images",
+        extensions: [...PDF_EXTENSIONS, ...MARKDOWN_EXTENSIONS, ...IMAGE_EXTENSIONS],
+      },
       { name: "PDF", extensions: PDF_EXTENSIONS },
+      { name: "Markdown", extensions: MARKDOWN_EXTENSIONS },
       { name: "Images", extensions: IMAGE_EXTENSIONS },
     ],
   });
@@ -72,23 +91,6 @@ function onFirstRender() {
   firstPageMs.value = performance.now() - openStartedAt;
 }
 
-async function runBenchmark() {
-  if (!viewer.value || !doc.value || benchRunning.value) return;
-  benchRunning.value = true;
-  try {
-    const result: BenchmarkResult = await viewer.value.runBenchmark(firstPageMs.value);
-    bench.value = JSON.stringify(result, null, 2);
-  } catch (e) {
-    error.value = String(e);
-  } finally {
-    benchRunning.value = false;
-  }
-}
-
-async function copyBench() {
-  if (bench.value) await navigator.clipboard?.writeText(bench.value).catch(() => undefined);
-}
-
 // ---- find in document ---------------------------------------------------------
 const findOpen = ref(false);
 const query = ref("");
@@ -96,12 +98,13 @@ const caseSensitive = ref(false);
 const matches = shallowRef<SearchMatch[]>([]);
 const current = ref(-1);
 const searching = ref(false);
+const mdFindMiss = ref(false); // last Markdown find found nothing
 const findInput = ref<HTMLInputElement | null>(null);
 let searchSeq = 0;
 let searchTimer: number | undefined;
 let searchPending = false; // typed since the last search ran (debounce running)
 
-const canSearch = () => doc.value?.kind === "pdf";
+const canSearch = () => doc.value?.kind === "pdf" || markdown.value !== null;
 
 function resetFind() {
   searchPending = false;
@@ -110,6 +113,7 @@ function resetFind() {
   matches.value = [];
   current.value = -1;
   searching.value = false;
+  mdFindMiss.value = false;
 }
 
 async function runSearch() {
@@ -135,12 +139,20 @@ async function runSearch() {
 }
 
 watch([query, caseSensitive], () => {
+  mdFindMiss.value = false;
+  if (markdown.value !== null) return; // Markdown is searched on Enter, see step()
   searchPending = true;
   clearTimeout(searchTimer);
   searchTimer = window.setTimeout(runSearch, 200);
 });
 
 function step(delta: number) {
+  if (markdown.value !== null) {
+    // window.find selects the match in the page, which moves focus out of the
+    // input; onWindowKey keeps Enter / Shift+Enter working from there.
+    mdFindMiss.value = !(mdViewer.value?.find(query.value, caseSensitive.value, delta < 0) ?? false);
+    return;
+  }
   const n = matches.value.length;
   if (n) current.value = (current.value + delta + n) % n;
 }
@@ -161,7 +173,8 @@ function closeFind() {
 function onFindKey(e: KeyboardEvent) {
   if (e.key === "Enter") {
     e.preventDefault();
-    if (searchPending) void runSearch(); // Enter right after typing: do not wait for the debounce
+    if (markdown.value !== null) step(e.shiftKey ? -1 : 1);
+    else if (searchPending) void runSearch(); // Enter right after typing: do not wait for the debounce
     else step(e.shiftKey ? -1 : 1);
   } else if (e.key === "Escape") {
     closeFind();
@@ -175,10 +188,18 @@ function onWindowKey(e: KeyboardEvent) {
   } else if (e.key === "F3" && findOpen.value) {
     e.preventDefault();
     step(e.shiftKey ? -1 : 1);
+  } else if (findOpen.value && markdown.value !== null && (e.target as HTMLElement | null)?.tagName !== "INPUT") {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      step(e.shiftKey ? -1 : 1);
+    } else if (e.key === "Escape") {
+      closeFind();
+    }
   }
 }
 
 const findStatus = () => {
+  if (markdown.value !== null) return mdFindMiss.value ? "No results" : "";
   if (searching.value) return "Searching…";
   if (!query.value.trim()) return "";
   if (!matches.value.length) return "No results";
@@ -221,10 +242,10 @@ onBeforeUnmount(() => {
     <header class="toolbar">
       <button @click="chooseFile">Open…</button>
       <span class="sep" />
-      <button :disabled="!doc" title="Zoom out" @click="zoomBy(1 / 1.25)">−</button>
+      <button :disabled="!hasContent()" title="Zoom out" @click="zoomBy(1 / 1.25)">−</button>
       <span class="zoom">{{ Math.round(zoom * 100) }}%</span>
-      <button :disabled="!doc" title="Zoom in" @click="zoomBy(1.25)">+</button>
-      <button :disabled="!doc" @click="viewer && setZoom(viewer.fitWidthZoom())">Fit width</button>
+      <button :disabled="!hasContent()" title="Zoom in" @click="zoomBy(1.25)">+</button>
+      <button :disabled="!hasContent()" @click="fitWidth">Fit width</button>
       <button
         :disabled="!doc || doc.kind !== 'pdf'"
         :class="{ active: sidebarOpen }"
@@ -233,9 +254,10 @@ onBeforeUnmount(() => {
       >
         Pages
       </button>
-      <button :disabled="!doc || doc.kind !== 'pdf'" title="Find (Ctrl/Cmd+F)" @click="openFind">Find</button>
+      <button :disabled="!canSearch()" title="Find (Ctrl/Cmd+F)" @click="openFind">Find</button>
       <span class="spacer" />
-      <span v-if="doc" class="info">
+      <span v-if="markdown !== null" class="info">{{ fileName }}</span>
+      <span v-else-if="doc" class="info">
         {{ fileName }} ·
         <template v-if="doc.kind === 'image'">
           {{ Math.round(doc.pages[0].width / 0.75) }} × {{ Math.round(doc.pages[0].height / 0.75) }} px
@@ -243,9 +265,6 @@ onBeforeUnmount(() => {
         <template v-else>page {{ currentPage + 1 }} / {{ doc.pageCount }}</template>
         <template v-if="firstPageMs !== null"> · first page {{ Math.round(firstPageMs) }} ms</template>
       </span>
-      <button :disabled="!doc || benchRunning" @click="runBenchmark">
-        {{ benchRunning ? "Running…" : "Benchmark" }}
-      </button>
     </header>
 
     <div v-if="findOpen" class="findbar">
@@ -288,20 +307,12 @@ onBeforeUnmount(() => {
         @page-change="(i: number) => (currentPage = i)"
         @error="(m: string) => (error = m)"
       />
-      <div v-if="!doc" class="empty">Drop a PDF or image here or press “Open…”</div>
+      <MarkdownViewer v-if="markdown !== null" ref="mdViewer" :html="markdown" :zoom="zoom" @zoom-by="zoomBy" />
+      <div v-if="!doc && markdown === null" class="empty">
+        Drop a PDF, Markdown file or image here or press “Open…”
+      </div>
     </main>
 
-    <div v-if="bench" class="modal" @click.self="bench = null">
-      <div class="dialog">
-        <h3>Benchmark result</h3>
-        <p>Attach this JSON to the performance gate in ADR 0001 (one result per OS).</p>
-        <textarea readonly :value="bench" rows="18" @focus="($event.target as HTMLTextAreaElement).select()" />
-        <div class="actions">
-          <button @click="copyBench">Copy</button>
-          <button @click="bench = null">Close</button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -396,36 +407,5 @@ button.active {
   place-items: center;
   opacity: 0.55;
   pointer-events: none;
-}
-.modal {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgb(0 0 0 / 0.45);
-}
-.dialog {
-  width: min(640px, 92vw);
-  padding: 16px;
-  background: var(--bar);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.dialog h3 {
-  margin: 0 0 6px;
-}
-.dialog textarea {
-  width: 100%;
-  font: 12px ui-monospace, Menlo, Consolas, monospace;
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 10px;
 }
 </style>

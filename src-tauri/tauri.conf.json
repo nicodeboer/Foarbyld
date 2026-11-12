@@ -39,7 +39,8 @@
     "category": "Productivity",
     "shortDescription": "Cross-platform document and image previewer",
     "fileAssociations": [
-      { "ext": ["pdf"], "mimeType": "application/pdf", "name": "PDF Document", "role": "Viewer" }
+      { "ext": ["pdf"], "mimeType": "application/pdf", "name": "PDF Document", "role": "Viewer" },
+      { "ext": ["md", "markdown"], "mimeType": "text/markdown", "name": "Markdown Document", "role": "Viewer" }
     ]
   }
 }

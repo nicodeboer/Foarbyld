@@ -1,6 +1,6 @@
 # ADR 0001: Tauri 2 as the application shell
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-12
 
 ## Context
@@ -38,11 +38,15 @@ webview only displays bitmaps/tiles and handles UI and interaction.
 
 ## Validation (prototype gate)
 
-Before committing further, build a prototype that opens a 200-page PDF and
-checks on Windows 11 and on Ubuntu LTS and Fedora (WebKitGTK):
+The original plan was to validate the choice before committing further: a
+prototype opening a 200-page PDF on Windows 11 and on Ubuntu LTS and Fedora
+(WebKitGTK), judged on smooth scrolling and zooming, time to first page under
+500 ms, and reasonable memory use. The prototype included a Benchmark button
+for this.
 
-- Smooth scrolling and zooming (target: no visible stutter at 60 Hz).
-- Time to first page under 500 ms for a typical 5 MB PDF.
-- Memory use stays reasonable while scrolling the whole document.
-
-If Linux performance is unacceptable, supersede this ADR with Electron or Qt.
+**Update (2026-11-12):** the owner dropped the gate. Linux performance is not a
+priority for this project, and the owner has seen the prototype work well
+enough, so the numbers will not be collected. The Benchmark button and its
+code were removed and this ADR is accepted without formal measurements. If
+WebKitGTK performance turns out to be a problem in practice, supersede this
+ADR with Electron or Qt.

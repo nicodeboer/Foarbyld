@@ -63,6 +63,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: cargo test -p md-core
       - run: node scripts/fetch-pdfium.mjs
 
       - name: Build bundles
