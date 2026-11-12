@@ -14,8 +14,8 @@ Stack: Tauri 2 · Vue 3 + TypeScript · Rust · PDFium. See [docs/adr](docs/adr)
 
 ```
 crates/pdf-core/   PDFium engine on a worker thread, no UI dependencies (unit-testable)
-src-tauri/         Tauri shell: commands open_pdf / render_page / close_pdf
-src/               Vue UI: virtual-scrolling viewer, zoom, drag & drop, benchmark
+src-tauri/         Tauri shell: commands open_document / render_page / page_text / search_text / close_pdf
+src/               Vue UI: virtual-scrolling viewer, zoom, text selection, find, drag & drop, benchmark
 scripts/           fetch-pdfium.mjs (pinned + SHA-256 verified), make-test-pdf.mjs
 docs/adr/          Architecture decision records
 ```
@@ -62,7 +62,10 @@ ADR 0001 with Electron or Qt.
 
 ## Known limitations of the prototype
 
-- PDF only (no images yet), no text selection, search or annotations.
+- Images (PNG, JPEG, GIF, WebP, BMP, TIFF) open as a one-page document: first frame only for animations, no text/search.
+- Text selection and find are PDF-only. Selection is drawn by Folio from PDFium glyph boxes (not native DOM selection);
+  find is a plain substring search (case toggle, matches across line breaks), no OCR. Pages whose MediaBox does not start at (0,0) may show offset highlights.
+- No annotations.
 - Rendering is serialised on one PDFium thread; bitmaps are converted BGRA → RGBA on the CPU.
 - The page cache is limited by bytes (256 MB) but not yet by document count.
 - Placeholder icon and app id (`org.example.folio`).

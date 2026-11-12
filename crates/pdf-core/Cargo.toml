@@ -11,3 +11,8 @@ description = "PDF engine for Folio: PDFium wrapper without any UI dependency"
 pdfium-render = { version = "0.8", default-features = false, features = ["pdfium_latest"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
+# Pure-Rust decoders only (no GPL/native deps); EXIF orientation is applied on open.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }

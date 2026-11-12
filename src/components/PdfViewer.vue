@@ -1,9 +1,25 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { renderPage, type DocInfo } from "../lib/api";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowReactive, shallowRef, watch } from "vue";
+import { fetchPageText, renderPage, type DocInfo, type SearchMatch } from "../lib/api";
 import { summarizeFrames, summarizeRenders, type BenchmarkResult } from "../lib/stats";
+import {
+  caretAt,
+  isEmptySelection,
+  lineRange,
+  lineRects,
+  ordered,
+  overGlyph,
+  textOf,
+  wordRange,
+  type PageText,
+  type Rect,
+  type Selection,
+} from "../lib/textLayer";
 
-const props = defineProps<{ doc: DocInfo | null; zoom: number }>();
+const props = withDefaults(
+  defineProps<{ doc: DocInfo | null; zoom: number; matches?: SearchMatch[]; currentMatch?: number }>(),
+  { matches: () => [], currentMatch: -1 },
+);
 const emit = defineEmits<{
   (e: "first-render"): void;
   (e: "zoom-by", factor: number): void;
@@ -219,6 +235,7 @@ function onWheel(e: WheelEvent) {
 
 let observer: ResizeObserver | undefined;
 onMounted(() => {
+  window.addEventListener("keydown", onKeyDown);
   const el = scroller.value!;
   observer = new ResizeObserver(() => {
     viewportW.value = el.clientWidth;
@@ -230,6 +247,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKeyDown);
+  endDrag();
+  clearTimeout(prefetchTimer);
   observer?.disconnect();
   clearTimeout(timer);
   clearCache();
@@ -275,6 +295,267 @@ watch([first, last], () => {
   }
   schedule(0);
 });
+
+// ---- text: loading, selection, search highlights -------------------------------
+const texts = shallowReactive(new Map<number, PageText>()); // page -> text of the current doc
+const inflight = new Map<number, Promise<PageText | null>>();
+const selection = shallowRef<Selection | null>(null);
+const overText = ref(false); // pointer is over a glyph -> text cursor
+const hasText = computed(() => props.doc?.kind === "pdf");
+const scale = computed(() => props.zoom * PT_TO_CSS); // PDF points -> CSS px
+
+/** Page text, fetched once. Resolves null when the doc changed meanwhile or the call failed. */
+function ensureText(page: number): Promise<PageText | null> {
+  const doc = props.doc;
+  if (!doc || doc.kind !== "pdf") return Promise.resolve(null);
+  const hit = texts.get(page);
+  if (hit) return Promise.resolve(hit);
+  let p = inflight.get(page);
+  if (!p) {
+    p = fetchPageText(doc.id, page)
+      .then((t) => {
+        if (props.doc?.id !== doc.id) return null;
+        texts.set(page, t);
+        return t;
+      })
+      .catch(() => null)
+      .finally(() => inflight.delete(page));
+    inflight.set(page, p);
+  }
+  return p;
+}
+
+let prefetchTimer: number | undefined;
+function prefetchVisibleText() {
+  clearTimeout(prefetchTimer);
+  // Slightly delayed so the first render is not queued behind text extraction.
+  prefetchTimer = window.setTimeout(() => {
+    for (let i = first.value; i <= last.value; i++) void ensureText(i);
+  }, 120);
+}
+
+const matchesByPage = computed(() => {
+  const m = new Map<number, number[]>();
+  props.matches.forEach((hit, gi) => {
+    const list = m.get(hit.page);
+    if (list) list.push(gi);
+    else m.set(hit.page, [gi]);
+  });
+  return m;
+});
+
+interface Highlight extends Rect {
+  kind: "sel" | "match" | "current";
+}
+
+/** Highlights for the visible pages, in CSS px relative to the page. */
+const highlights = computed(() => {
+  const out = new Map<number, Highlight[]>();
+  const s = scale.value;
+  const add = (page: number, kind: Highlight["kind"], rects: Rect[]) => {
+    let list = out.get(page);
+    if (!list) out.set(page, (list = []));
+    for (const r of rects) list.push({ kind, x: r.x * s, y: r.y * s, w: r.w * s, h: r.h * s });
+  };
+  const sel = selection.value;
+  const range = isEmptySelection(sel) ? null : ordered(sel!);
+  for (let page = first.value; page <= last.value; page++) {
+    const t = texts.get(page);
+    if (!t) continue;
+    for (const gi of matchesByPage.value.get(page) ?? []) {
+      const m = props.matches[gi];
+      add(page, gi === props.currentMatch ? "current" : "match", lineRects(t, m.start, m.start + m.len));
+    }
+    if (range && page >= range.start.page && page <= range.end.page) {
+      const a = page === range.start.page ? range.start.index : 0;
+      const b = page === range.end.page ? range.end.index : t.chars.length;
+      add(page, "sel", lineRects(t, a, b));
+    }
+  }
+  return out;
+});
+
+function highlightStyle(h: Highlight) {
+  return { left: `${h.x}px`, top: `${h.y}px`, width: `${h.w}px`, height: `${h.h}px` };
+}
+
+/** Page under a viewport point (the nearest one when between pages) and the point in PDF points on it. */
+function locate(clientX: number, clientY: number): { page: number; x: number; y: number } | null {
+  const el = scroller.value;
+  const doc = props.doc;
+  if (!el || !doc) return null;
+  const r = el.getBoundingClientRect();
+  const cx = clientX - r.left + el.scrollLeft;
+  const cy = clientY - r.top + el.scrollTop;
+  const { tops, heights, widths } = layout.value;
+  let lo = 0;
+  let hi = tops.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (tops[mid] + heights[mid] + GAP / 2 < cy) lo = mid + 1;
+    else hi = mid;
+  }
+  const left = Math.max(0, (contentWidth.value - widths[lo]) / 2);
+  return { page: lo, x: (cx - left) / scale.value, y: (cy - tops[lo]) / scale.value };
+}
+
+let dragging = false;
+let lastPointer = { x: 0, y: 0 };
+let dragSeq = 0;
+let autoScroll = 0;
+
+async function onMouseDown(e: MouseEvent) {
+  if (e.button !== 0 || !hasText.value) return;
+  if (!(e.target as HTMLElement).closest(".content")) return; // scrollbar
+  const p = locate(e.clientX, e.clientY);
+  if (!p) return;
+  e.preventDefault(); // no native selection / image drag
+  const t = await ensureText(p.page);
+  if (!t) return;
+  const caret = caretAt(t, p.x, p.y);
+  if (caret === null) {
+    selection.value = null;
+    return;
+  }
+  if (e.detail >= 2) {
+    const [a, b] = e.detail === 2 ? wordRange(t, caret) : lineRange(t, caret);
+    selection.value = { anchor: { page: p.page, index: a }, focus: { page: p.page, index: b } };
+    return;
+  }
+  const here = { page: p.page, index: caret };
+  selection.value = e.shiftKey && selection.value ? { anchor: selection.value.anchor, focus: here } : { anchor: here, focus: here };
+  dragging = true;
+  lastPointer = { x: e.clientX, y: e.clientY };
+  window.addEventListener("mousemove", onDragMove);
+  window.addEventListener("mouseup", endDrag);
+  autoScroll = window.setInterval(autoScrollStep, 30);
+}
+
+async function extendTo(clientX: number, clientY: number) {
+  const p = locate(clientX, clientY);
+  const seq = ++dragSeq;
+  if (!p) return;
+  const t = await ensureText(p.page);
+  if (!t || seq !== dragSeq || !dragging || !selection.value) return;
+  const caret = caretAt(t, p.x, p.y);
+  if (caret === null) return;
+  selection.value = { anchor: selection.value.anchor, focus: { page: p.page, index: caret } };
+}
+
+function onDragMove(e: MouseEvent) {
+  lastPointer = { x: e.clientX, y: e.clientY };
+  void extendTo(e.clientX, e.clientY);
+}
+
+/** Keeps scrolling while the pointer is held beyond the top/bottom edge. */
+function autoScrollStep() {
+  const el = scroller.value;
+  if (!el || !dragging) return;
+  const r = el.getBoundingClientRect();
+  const edge = 24;
+  const dy = lastPointer.y < r.top + edge ? lastPointer.y - (r.top + edge) : lastPointer.y > r.bottom - edge ? lastPointer.y - (r.bottom - edge) : 0;
+  if (!dy) return;
+  el.scrollTop += Math.sign(dy) * Math.min(60, Math.abs(dy) / 2 + 4);
+  scrollTop.value = el.scrollTop;
+  void extendTo(lastPointer.x, lastPointer.y);
+}
+
+function endDrag() {
+  dragging = false;
+  clearInterval(autoScroll);
+  window.removeEventListener("mousemove", onDragMove);
+  window.removeEventListener("mouseup", endDrag);
+  if (isEmptySelection(selection.value)) selection.value = null;
+}
+
+let hoverRaf = 0;
+function onHover(e: MouseEvent) {
+  if (dragging || !hasText.value || hoverRaf) return;
+  const { clientX, clientY } = e;
+  hoverRaf = requestAnimationFrame(() => {
+    hoverRaf = 0;
+    const p = locate(clientX, clientY);
+    const t = p && texts.get(p.page);
+    overText.value = !!t && overGlyph(t, p!.x, p!.y);
+  });
+}
+
+async function selectedText(): Promise<string> {
+  const sel = selection.value;
+  if (!sel || isEmptySelection(sel)) return "";
+  const { start, end } = ordered(sel);
+  const parts: string[] = [];
+  for (let page = start.page; page <= end.page; page++) {
+    const t = await ensureText(page);
+    if (!t) continue;
+    parts.push(textOf(t, page === start.page ? start.index : 0, page === end.page ? end.index : t.chars.length));
+  }
+  return parts.join("\n");
+}
+
+async function selectAll() {
+  const doc = props.doc;
+  if (!doc || !hasText.value) return;
+  const t = await ensureText(doc.pageCount - 1);
+  if (!t) return;
+  selection.value = {
+    anchor: { page: 0, index: 0 },
+    focus: { page: doc.pageCount - 1, index: t.chars.length },
+  };
+}
+
+function onKeyDown(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement | null)?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return; // let fields handle their own shortcuts
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === "c" && !isEmptySelection(selection.value)) {
+    e.preventDefault();
+    void selectedText().then(async (s) => {
+      if (s) await navigator.clipboard?.writeText(s).catch(() => undefined);
+    });
+  } else if (mod && e.key.toLowerCase() === "a" && hasText.value) {
+    e.preventDefault();
+    void selectAll();
+  } else if (e.key === "Escape" && selection.value) {
+    selection.value = null;
+  }
+}
+
+/** Scroll so the match is visible (centred), unless it already is. */
+async function revealMatch(index: number) {
+  const m = props.matches[index];
+  const el = scroller.value;
+  if (!m || !el) return;
+  const t = await ensureText(m.page);
+  const r = t && lineRects(t, m.start, m.start + m.len)[0];
+  if (!r || props.matches[index] !== m) return; // superseded while loading
+  const s = scale.value;
+  const top = layout.value.tops[m.page] + r.y * s;
+  const bottom = top + r.h * s;
+  if (top < el.scrollTop + 8 || bottom > el.scrollTop + el.clientHeight - 8) {
+    el.scrollTop = Math.max(0, top - (el.clientHeight - r.h * s) / 2);
+    scrollTop.value = el.scrollTop;
+  }
+  const left = Math.max(0, (contentWidth.value - layout.value.widths[m.page]) / 2) + r.x * s;
+  if (left < el.scrollLeft || left + r.w * s > el.scrollLeft + el.clientWidth) {
+    el.scrollLeft = Math.max(0, left - el.clientWidth / 2);
+  }
+}
+
+watch([() => props.matches, () => props.currentMatch], () => {
+  if (props.currentMatch >= 0) void revealMatch(props.currentMatch);
+});
+
+watch(
+  () => props.doc?.id,
+  () => {
+    texts.clear();
+    inflight.clear();
+    selection.value = null;
+    overText.value = false;
+  },
+);
+watch([first, last], prefetchVisibleText);
 
 // ---- exposed API (toolbar + benchmark) -----------------------------------------
 function fitWidthZoom(): number {
@@ -359,7 +640,15 @@ defineExpose({ fitWidthZoom, runBenchmark });
 </script>
 
 <template>
-  <div ref="scroller" class="scroller" @scroll.passive="onScroll" @wheel="onWheel">
+  <div
+    ref="scroller"
+    class="scroller"
+    :class="{ 'over-text': overText }"
+    @scroll.passive="onScroll"
+    @wheel="onWheel"
+    @mousedown="onMouseDown"
+    @mousemove="onHover"
+  >
     <div v-if="doc" class="content" :style="{ height: layout.total + 'px', width: contentWidth + 'px' }">
       <canvas
         v-for="i in visiblePages"
@@ -368,6 +657,9 @@ defineExpose({ fitWidthZoom, runBenchmark });
         class="page"
         :style="pageStyle(i)"
       />
+      <div v-for="i in visiblePages" :key="`hl:${doc.id}:${i}`" class="layer" :style="pageStyle(i)">
+        <i v-for="(h, k) in highlights.get(i)" :key="k" :class="['hl', h.kind]" :style="highlightStyle(h)" />
+      </div>
     </div>
   </div>
 </template>
@@ -378,8 +670,31 @@ defineExpose({ fitWidthZoom, runBenchmark });
   flex: 1;
   overflow: auto;
 }
+.scroller.over-text {
+  cursor: text;
+}
 .content {
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.layer {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+.hl {
+  position: absolute;
+  mix-blend-mode: multiply; /* keep the glyphs readable under the highlight */
+}
+.hl.sel {
+  background: rgb(60 130 255 / 0.4);
+}
+.hl.match {
+  background: rgb(255 214 0 / 0.55);
+}
+.hl.current {
+  background: rgb(255 140 0 / 0.65);
 }
 .page {
   position: absolute;

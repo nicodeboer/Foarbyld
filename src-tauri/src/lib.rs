@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use pdf_core::{DocInfo, PdfEngine};
+use std::sync::Arc;
+
+use pdf_core::{DocInfo, PageText, PdfEngine, SearchMatch};
 use tauri::{ipc::Response, Manager, State};
 
 /// App state. The engine is a `Result` so the UI can show a helpful message
@@ -42,8 +44,9 @@ fn initial_file_from_args() -> Option<String> {
 // NOTE: `command(async)` runs on the thread pool. Plain sync commands run on
 // the main thread in Tauri 2 and would freeze the UI while PDFium renders.
 
+/// Opens a PDF or a raster image; the engine decides by extension / magic bytes.
 #[tauri::command(async)]
-fn open_pdf(state: State<'_, AppState>, path: String) -> Result<DocInfo, String> {
+fn open_document(state: State<'_, AppState>, path: String) -> Result<DocInfo, String> {
     state.engine()?.open(Path::new(&path)).map_err(|e| e.to_string())
 }
 
@@ -62,6 +65,25 @@ fn render_page(
     buf.extend_from_slice(&r.height.to_le_bytes());
     buf.extend_from_slice(&r.rgba);
     Ok(Response::new(buf))
+}
+
+/// Characters + per-character boxes of one page (JSON; ~20 bytes per character).
+#[tauri::command(async)]
+fn page_text(state: State<'_, AppState>, doc: u64, page: usize) -> Result<Arc<PageText>, String> {
+    state.engine()?.page_text(doc, page).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+fn search_text(
+    state: State<'_, AppState>,
+    doc: u64,
+    query: String,
+    case_sensitive: bool,
+) -> Result<Vec<SearchMatch>, String> {
+    state
+        .engine()?
+        .search(doc, &query, case_sensitive)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -94,7 +116,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            open_pdf,
+            open_document,
+            page_text,
+            search_text,
             render_page,
             close_pdf,
             engine_error,

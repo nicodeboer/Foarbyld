@@ -11,8 +11,8 @@ Tauri 2 shell · Vue 3 + TypeScript (Vite) · Rust core · PDFium via `pdfium-re
 
 ```
 crates/pdf-core/   PDFium engine on its own worker thread; no UI deps; unit/integration tested
-src-tauri/         Tauri commands (open_pdf, render_page, close_pdf, engine_error, initial_file)
-src/               Vue UI: App.vue, components/PdfViewer.vue (virtual scroll + benchmark), lib/api.ts
+src-tauri/         Tauri commands (open_document, render_page, page_text, search_text, close_pdf, engine_error, initial_file)
+src/               Vue UI: App.vue (toolbar, find bar), components/PdfViewer.vue (virtual scroll, selection, highlights, benchmark), lib/api.ts, lib/textLayer.ts (pure selection/hit-test helpers, vitest)
 scripts/           fetch-pdfium.mjs (pinned version + SHA-256), make-test-pdf.mjs
 docs/adr/          Architecture decision records (0001 Tauri, 0002 PDFium, 0003 Apache-2.0)
 ```
@@ -25,6 +25,7 @@ npm run fetch:pdfium       # pinned PDFium -> src-tauri/resources/pdfium (not in
 npm run make:testpdf       # testdata/200-pages.pdf (not in git)
 npm run tauri dev          # run the app
 npm run typecheck          # vue-tsc
+npm test                   # vitest (src/lib/*.test.ts)
 npm run build              # typecheck + vite build
 
 # Engine tests against real PDFium (skipped without the env vars)
@@ -45,6 +46,13 @@ Linux needs: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindi
   (`render_page` in `src-tauri/src/lib.rs`, parsed in `src/lib/api.ts`). Keep both sides in sync.
 - If PDFium is missing the app still starts; the UI shows the error from `engine_error`.
   Lookup order: `PDFIUM_LIB_DIR`, bundled resources dir, `src-tauri/resources/pdfium`, system.
+- **Images** (`image_doc.rs`) are one-page documents in the same worker/id space as PDFs: 1 image px = 0.75 pt,
+  so 100% zoom = 1:1. `DocInfo.kind` is `pdf` | `image`. Decoders are pure-Rust `image` features only (keep it that way for licensing/portability).
+- **Text**: `page_text` returns one char + one box per PDFium char (`PageText`, boxes in top-left pt of the *displayed* page, rotation applied).
+  Char index is a code point index (JS: `Array.from`), valid for both selection and search (`SearchMatch.start/len`). Search runs in Rust over cached page text.
+  Selection is custom (no DOM text layer): hit-test, drag, highlight and copy all live in `PdfViewer.vue` + `lib/textLayer.ts`.
+- Integration tests share one `PdfEngine` per process (`OnceLock`): PDFium cannot be initialised twice concurrently. On Apple Silicon with an x86_64 Rust toolchain
+  add `--target aarch64-apple-darwin` (the fetched dylib is arm64).
 - Viewer (`PdfViewer.vue`): only visible pages (+ overscan) have canvases; decoded bitmaps are
   cached by byte budget (256 MB). Canvas intrinsic size is set at draw time so a zoom shows the
   old bitmap scaled until the re-render lands.
@@ -70,6 +78,5 @@ ADR 0001 with Electron or Qt.
 
 ## Status / next steps
 
-Done: PDF open/render/zoom/scroll, drag & drop, benchmark, CI workflow (Ubuntu + Windows; not yet run).
-Not yet: run the performance gate on real Linux/Windows; images (image-rs); text selection and
-search; annotations; page reorder/merge; signing; packaging (Flatpak, winget, code signing).
+Done: PDF open/render/zoom/scroll, drag & drop, benchmark, images (image-rs), text selection + copy, find (Ctrl/Cmd+F), CI workflow (Ubuntu + Windows; not yet run).
+Not yet: run the performance gate on real Linux/Windows; selection/find UI never exercised in the real webview on Linux; annotations; page reorder/merge; signing; packaging (Flatpak, winget, code signing).
