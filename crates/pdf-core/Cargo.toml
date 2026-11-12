@@ -3,7 +3,7 @@ name = "pdf-core"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "PDF engine for Folio: PDFium wrapper without any UI dependency"
+description = "PDF engine for Foarbyld: PDFium wrapper without any UI dependency"
 
 [dependencies]
 # PDFium runs on a single worker thread (see lib.rs), so the crate's

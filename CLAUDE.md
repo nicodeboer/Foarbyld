@@ -1,4 +1,4 @@
-# Folio (working title)
+# Foarbyld
 
 Open-source, cross-platform document and image previewer (think macOS Preview) for
 Windows and Linux. Apache-2.0. Currently a **prototype whose job is to decide
@@ -73,8 +73,7 @@ ADR 0001 with Electron or Qt.
 - Code, comments, commit messages and docs in English. Chat with the owner can be Dutch.
 - Architectural decisions go in `docs/adr/NNNN-title.md` (status, context, decision,
   alternatives, consequences); never edit an accepted ADR, supersede it with a new one.
-- "Folio" and `org.example.folio` are placeholders: rename in `package.json`,
-  `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, `index.html`, README. Icons are placeholders.
+- App id is `io.github.nicodeboer.foarbyld`; keep it stable after the first release. Icons are placeholders.
 
 ## Status / next steps
 

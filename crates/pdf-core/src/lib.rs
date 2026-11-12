@@ -1,4 +1,4 @@
-//! PDF engine for Folio.
+//! PDF engine for Foarbyld.
 //!
 //! A thin, UI-independent wrapper around PDFium (via `pdfium-render`).
 //! The app shell (Tauri) only calls the functions in this crate, which keeps

@@ -1,12 +1,12 @@
 [package]
-name = "folio"
+name = "foarbyld"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Folio: a cross-platform document and image previewer"
+description = "Foarbyld: a cross-platform document and image previewer"
 
 [lib]
-name = "folio_lib"
+name = "foarbyld_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

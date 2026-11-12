@@ -1,4 +1,4 @@
-# Folio (working title)
+# Foarbyld
 
 An open-source document and image previewer for Windows and Linux, in the
 spirit of macOS Preview. This repository is the **prototype that decides
@@ -9,9 +9,6 @@ Stack: Tauri 2 · Vue 3 + TypeScript · Rust · PDFium. See [docs/adr](docs/adr)
 
 Features so far: PDF viewing (zoom, virtual scrolling), images (PNG, JPEG, GIF,
 WebP, BMP, TIFF), text selection and copy, find in document (Ctrl/Cmd+F), page thumbnail sidebar, drag & drop.
-
-> "Folio" is a placeholder. Rename in `package.json`, `src-tauri/Cargo.toml`,
-> `src-tauri/tauri.conf.json` (name, identifier) and `index.html`.
 
 ## Layout
 
@@ -72,15 +69,28 @@ Suggested pass criteria: first page < 500 ms, frame time p95 < 25 ms, slow
 frames (> 50 ms) < 1%, zoom settle < 1 s. If Linux fails these, supersede
 ADR 0001 with Electron or Qt.
 
+## Releasing
+
+Bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`
+(they must match the tag), then:
+
+```sh
+git tag -a v0.1.0 -m "Foarbyld 0.1.0" && git push origin v0.1.0
+```
+
+The `Release` workflow builds Linux (.deb, .rpm, .AppImage) and Windows (.msi, .exe)
+installers and attaches them to a **draft** GitHub release. Review it and publish.
+Builds are unsigned. Tags with a hyphen (`v0.2.0-rc1`) become pre-releases.
+
 ## Known limitations of the prototype
 
 - Images (PNG, JPEG, GIF, WebP, BMP, TIFF) open as a one-page document: first frame only for animations, no text/search.
-- Text selection and find are PDF-only. Selection is drawn by Folio from PDFium glyph boxes (not native DOM selection);
+- Text selection and find are PDF-only. Selection is drawn by Foarbyld from PDFium glyph boxes (not native DOM selection);
   find is a plain substring search (case toggle, matches across line breaks), no OCR. Pages whose MediaBox does not start at (0,0) may show offset highlights.
 - No annotations.
 - Rendering is serialised on one PDFium thread; bitmaps are converted BGRA → RGBA on the CPU.
 - The page cache is limited by bytes (256 MB) but not yet by document count.
-- Placeholder icon and app id (`org.example.folio`).
+- Placeholder icon.
 
 ## License
 

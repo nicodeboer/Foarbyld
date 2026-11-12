@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn opens_png_from_disk() {
-        let dir = std::env::temp_dir().join(format!("folio-img-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("foarbyld-img-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("t.png");
         RgbaImage::from_pixel(8, 4, Rgba([1, 2, 3, 255])).save(&p).unwrap();

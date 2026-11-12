@@ -125,5 +125,5 @@ pub fn run() {
             initial_file
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Folio");
+        .expect("error while running Foarbyld");
 }

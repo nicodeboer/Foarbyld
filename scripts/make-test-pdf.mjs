@@ -16,7 +16,7 @@ const font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
 
 const pageIds = [];
 for (let p = 1; p <= pages; p++) {
-  let c = "BT /F1 18 Tf 50 800 Td (Folio test page " + p + " of " + pages + ") Tj ET\n";
+  let c = "BT /F1 18 Tf 50 800 Td (Foarbyld test page " + p + " of " + pages + ") Tj ET\n";
   c += "BT /F1 9 Tf 11 TL 50 780 Td\n";
   for (let l = 0; l < 60; l++) {
     c += "(Line " + (l + 1) + ": The quick brown fox jumps over the lazy dog, page " + p + ".) Tj T*\n";

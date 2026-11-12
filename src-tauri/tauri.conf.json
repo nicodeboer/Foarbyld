@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Folio",
+  "productName": "Foarbyld",
   "version": "0.1.0",
-  "identifier": "org.example.folio",
+  "identifier": "io.github.nicodeboer.foarbyld",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Folio",
+        "title": "Foarbyld",
         "width": 1100,
         "height": 800,
         "minWidth": 480,

@@ -74,7 +74,7 @@ fn extracts_text_with_boxes_and_searches() {
 
     let t = engine.page_text(info.id, 0).unwrap();
     let n = t.text.chars().count();
-    assert!(t.text.contains("Folio test page 1 of"), "got: {:?}", &t.text[..60.min(t.text.len())]);
+    assert!(t.text.contains("Foarbyld test page 1 of"), "got: {:?}", &t.text[..60.min(t.text.len())]);
     assert_eq!(t.boxes.len(), n * 4, "one box per character");
 
     // The title line is the first thing on the page: its glyph boxes lie inside the page.
@@ -89,11 +89,11 @@ fn extracts_text_with_boxes_and_searches() {
     assert!(first[1] < t.boxes[body_idx * 4 + 1]);
 
     // "page 7." appears 60 times on page 7 only in the body, plus the title "page 7 of".
-    let hits = engine.search(info.id, "FOLIO TEST PAGE 7 OF", false).unwrap();
+    let hits = engine.search(info.id, "FOARBYLD TEST PAGE 7 OF", false).unwrap();
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].page, 6);
-    assert_eq!(hits[0].len, "Folio test page 7 of".len());
-    assert!(engine.search(info.id, "FOLIO TEST PAGE 7 OF", true).unwrap().is_empty());
+    assert_eq!(hits[0].len, "Foarbyld test page 7 of".len());
+    assert!(engine.search(info.id, "FOARBYLD TEST PAGE 7 OF", true).unwrap().is_empty());
 
     let all = engine.search(info.id, "quick brown fox", false).unwrap();
     assert_eq!(all.len(), info.page_count * 60);
@@ -109,7 +109,7 @@ fn opens_and_renders_images() {
         eprintln!("skipped: set PDFIUM_LIB_DIR to run this test");
         return;
     };
-    let dir = std::env::temp_dir().join(format!("folio-it-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("foarbyld-it-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("pic.png");
     image::RgbaImage::from_pixel(320, 160, image::Rgba([200, 30, 30, 255]))
@@ -140,7 +140,7 @@ fn opens_every_supported_image_format() {
         eprintln!("skipped: set PDFIUM_LIB_DIR to run this test");
         return;
     };
-    let dir = std::env::temp_dir().join(format!("folio-fmt-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("foarbyld-fmt-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let img = image::RgbImage::from_pixel(64, 32, image::Rgb([20, 120, 220]));
     for ext in pdf_core::SUPPORTED_IMAGE_EXTENSIONS {
