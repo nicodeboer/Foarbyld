@@ -24,6 +24,7 @@ const emit = defineEmits<{
   (e: "first-render"): void;
   (e: "zoom-by", factor: number): void;
   (e: "error", message: string): void;
+  (e: "page-change", page: number): void;
 }>();
 
 const GAP = 12; // CSS px between pages
@@ -296,6 +297,32 @@ watch([first, last], () => {
   schedule(0);
 });
 
+// ---- current page / navigation ---------------------------------------------------
+/** Page that covers the line one third down the viewport (what a reader looks at). */
+const currentPage = computed(() => {
+  const { tops, heights } = layout.value;
+  const n = tops.length;
+  if (!n) return 0;
+  const y = scrollTop.value + viewportH.value / 3;
+  let lo = 0;
+  let hi = n - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (tops[mid] + heights[mid] + GAP / 2 < y) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+});
+watch(currentPage, (p) => emit("page-change", p), { immediate: true });
+
+function scrollToPage(i: number) {
+  const el = scroller.value;
+  const top = layout.value.tops[i];
+  if (!el || top === undefined) return;
+  el.scrollTop = Math.max(0, top - GAP);
+  scrollTop.value = el.scrollTop;
+}
+
 // ---- text: loading, selection, search highlights -------------------------------
 const texts = shallowReactive(new Map<number, PageText>()); // page -> text of the current doc
 const inflight = new Map<number, Promise<PageText | null>>();
@@ -404,31 +431,43 @@ let lastPointer = { x: 0, y: 0 };
 let dragSeq = 0;
 let autoScroll = 0;
 
-async function onMouseDown(e: MouseEvent) {
+function onMouseDown(e: MouseEvent) {
   if (e.button !== 0 || !hasText.value) return;
   if (!(e.target as HTMLElement).closest(".content")) return; // scrollbar
   const p = locate(e.clientX, e.clientY);
   if (!p) return;
   e.preventDefault(); // no native selection / image drag
-  const t = await ensureText(p.page);
-  if (!t) return;
-  const caret = caretAt(t, p.x, p.y);
-  if (caret === null) {
-    selection.value = null;
-    return;
-  }
-  if (e.detail >= 2) {
-    const [a, b] = e.detail === 2 ? wordRange(t, caret) : lineRange(t, caret);
-    selection.value = { anchor: { page: p.page, index: a }, focus: { page: p.page, index: b } };
-    return;
-  }
-  const here = { page: p.page, index: caret };
-  selection.value = e.shiftKey && selection.value ? { anchor: selection.value.anchor, focus: here } : { anchor: here, focus: here };
-  dragging = true;
+  const { detail, shiftKey } = e;
+  const extend = shiftKey && selection.value ? selection.value.anchor : null;
   lastPointer = { x: e.clientX, y: e.clientY };
-  window.addEventListener("mousemove", onDragMove);
-  window.addEventListener("mouseup", endDrag);
-  autoScroll = window.setInterval(autoScrollStep, 30);
+
+  // Start tracking the drag right away: the page text may still be loading and
+  // the button can be released (or the pointer moved) before it arrives.
+  endDrag();
+  if (detail < 2) {
+    dragging = true;
+    window.addEventListener("mousemove", onDragMove);
+    window.addEventListener("mouseup", endDrag);
+    autoScroll = window.setInterval(autoScrollStep, 30);
+  }
+
+  void ensureText(p.page).then((t) => {
+    if (!t) return;
+    const caret = caretAt(t, p.x, p.y);
+    if (caret === null) {
+      selection.value = null;
+      return;
+    }
+    if (detail >= 2) {
+      const [a, b] = detail === 2 ? wordRange(t, caret) : lineRange(t, caret);
+      selection.value = { anchor: { page: p.page, index: a }, focus: { page: p.page, index: b } };
+      return;
+    }
+    const here = { page: p.page, index: caret };
+    selection.value = { anchor: extend ?? here, focus: here };
+    // The pointer may have travelled while the text was loading: catch up.
+    if (dragging) void extendTo(lastPointer.x, lastPointer.y);
+  });
 }
 
 async function extendTo(clientX: number, clientY: number) {
@@ -636,7 +675,7 @@ async function runBenchmark(firstPageMs: number | null): Promise<BenchmarkResult
   };
 }
 
-defineExpose({ fitWidthZoom, runBenchmark });
+defineExpose({ fitWidthZoom, runBenchmark, scrollToPage });
 </script>
 
 <template>

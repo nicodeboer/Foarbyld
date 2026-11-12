@@ -12,7 +12,7 @@ Tauri 2 shell · Vue 3 + TypeScript (Vite) · Rust core · PDFium via `pdfium-re
 ```
 crates/pdf-core/   PDFium engine on its own worker thread; no UI deps; unit/integration tested
 src-tauri/         Tauri commands (open_document, render_page, page_text, search_text, close_pdf, engine_error, initial_file)
-src/               Vue UI: App.vue (toolbar, find bar), components/PdfViewer.vue (virtual scroll, selection, highlights, benchmark), lib/api.ts, lib/textLayer.ts (pure selection/hit-test helpers, vitest)
+src/               Vue UI: App.vue (toolbar, find bar), components/PdfViewer.vue (virtual scroll, selection, highlights, benchmark), components/ThumbnailSidebar.vue, lib/api.ts, lib/textLayer.ts (pure selection/hit-test helpers, vitest)
 scripts/           fetch-pdfium.mjs (pinned version + SHA-256), make-test-pdf.mjs
 docs/adr/          Architecture decision records (0001 Tauri, 0002 PDFium, 0003 Apache-2.0)
 ```
@@ -78,5 +78,5 @@ ADR 0001 with Electron or Qt.
 
 ## Status / next steps
 
-Done: PDF open/render/zoom/scroll, drag & drop, benchmark, images (image-rs), text selection + copy, find (Ctrl/Cmd+F), CI workflow (Ubuntu + Windows; not yet run).
+Done: PDF open/render/zoom/scroll, drag & drop, benchmark, images (image-rs), text selection + copy, find (Ctrl/Cmd+F), thumbnail sidebar, CI workflow (Ubuntu + Windows; not yet run).
 Not yet: run the performance gate on real Linux/Windows; selection/find UI never exercised in the real webview on Linux; annotations; page reorder/merge; signing; packaging (Flatpak, winget, code signing).

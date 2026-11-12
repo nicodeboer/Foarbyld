@@ -133,3 +133,27 @@ fn opens_and_renders_images() {
     assert!(engine.open(&bad).is_err());
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn opens_every_supported_image_format() {
+    let Some(engine) = shared_engine() else {
+        eprintln!("skipped: set PDFIUM_LIB_DIR to run this test");
+        return;
+    };
+    let dir = std::env::temp_dir().join(format!("folio-fmt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let img = image::RgbImage::from_pixel(64, 32, image::Rgb([20, 120, 220]));
+    for ext in pdf_core::SUPPORTED_IMAGE_EXTENSIONS {
+        let path = dir.join(format!("pic.{ext}"));
+        // Encoders for some formats need specific pixel layouts; RGB8 is accepted by all of these.
+        if img.save(&path).is_err() {
+            eprintln!("note: cannot encode {ext} in test, skipped");
+            continue;
+        }
+        let info = engine.open(&path).unwrap_or_else(|e| panic!("open .{ext}: {e}"));
+        assert_eq!(info.kind, pdf_core::DocKind::Image, ".{ext}");
+        let r = engine.render(info.id, 0, 64).unwrap();
+        assert_eq!((r.width, r.height), (64, 32), ".{ext}");
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}

@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vu
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import PdfViewer from "./components/PdfViewer.vue";
+import ThumbnailSidebar from "./components/ThumbnailSidebar.vue";
 import {
   closePdf,
   engineError,
@@ -26,6 +27,8 @@ const dragging = ref(false);
 const firstPageMs = ref<number | null>(null);
 const bench = ref<string | null>(null);
 const benchRunning = ref(false);
+const sidebarOpen = ref(true);
+const currentPage = ref(0);
 const viewer = ref<InstanceType<typeof PdfViewer> | null>(null);
 
 let openStartedAt = 0;
@@ -222,6 +225,14 @@ onBeforeUnmount(() => {
       <span class="zoom">{{ Math.round(zoom * 100) }}%</span>
       <button :disabled="!doc" title="Zoom in" @click="zoomBy(1.25)">+</button>
       <button :disabled="!doc" @click="viewer && setZoom(viewer.fitWidthZoom())">Fit width</button>
+      <button
+        :disabled="!doc || doc.kind !== 'pdf'"
+        :class="{ active: sidebarOpen }"
+        title="Show or hide page thumbnails"
+        @click="sidebarOpen = !sidebarOpen"
+      >
+        Pages
+      </button>
       <button :disabled="!doc || doc.kind !== 'pdf'" title="Find (Ctrl/Cmd+F)" @click="openFind">Find</button>
       <span class="spacer" />
       <span v-if="doc" class="info">
@@ -229,7 +240,7 @@ onBeforeUnmount(() => {
         <template v-if="doc.kind === 'image'">
           {{ Math.round(doc.pages[0].width / 0.75) }} × {{ Math.round(doc.pages[0].height / 0.75) }} px
         </template>
-        <template v-else>{{ doc.pageCount }} pages</template>
+        <template v-else>page {{ currentPage + 1 }} / {{ doc.pageCount }}</template>
         <template v-if="firstPageMs !== null"> · first page {{ Math.round(firstPageMs) }} ms</template>
       </span>
       <button :disabled="!doc || benchRunning" @click="runBenchmark">
@@ -260,6 +271,12 @@ onBeforeUnmount(() => {
     </div>
 
     <main class="main">
+      <ThumbnailSidebar
+        v-if="doc && doc.kind === 'pdf' && sidebarOpen"
+        :doc="doc"
+        :current-page="currentPage"
+        @select="(i: number) => viewer?.scrollToPage(i)"
+      />
       <PdfViewer
         ref="viewer"
         :doc="doc"
@@ -268,6 +285,7 @@ onBeforeUnmount(() => {
         :current-match="current"
         @first-render="onFirstRender"
         @zoom-by="zoomBy"
+        @page-change="(i: number) => (currentPage = i)"
         @error="(m: string) => (error = m)"
       />
       <div v-if="!doc" class="empty">Drop a PDF or image here or press “Open…”</div>
@@ -304,6 +322,9 @@ onBeforeUnmount(() => {
   padding: 6px 10px;
   background: var(--bar);
   border-bottom: 1px solid var(--border);
+}
+button.active {
+  border-color: var(--accent);
 }
 .sep {
   width: 1px;
