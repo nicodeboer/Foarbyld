@@ -7,6 +7,9 @@ PDFium-backed renderer scroll and zoom a large PDF smoothly on WebKitGTK?
 
 Stack: Tauri 2 · Vue 3 + TypeScript · Rust · PDFium. See [docs/adr](docs/adr).
 
+Features so far: PDF viewing (zoom, virtual scrolling), images (PNG, JPEG, GIF,
+WebP, BMP, TIFF), text selection and copy, find in document (Ctrl/Cmd+F), drag & drop.
+
 > "Folio" is a placeholder. Rename in `package.json`, `src-tauri/Cargo.toml`,
 > `src-tauri/tauri.conf.json` (name, identifier) and `index.html`.
 
@@ -45,6 +48,15 @@ Engine tests (real PDFium, skipped when the env vars are not set):
 PDFIUM_LIB_DIR=$PWD/src-tauri/resources/pdfium \
 TEST_PDF=$PWD/testdata/200-pages.pdf \
 cargo test -p pdf-core -- --nocapture
+```
+
+On Apple Silicon with an x86_64 Rust toolchain, add `--target aarch64-apple-darwin`
+(the fetched PDFium dylib is arm64).
+
+Frontend tests (selection / hit-testing helpers):
+
+```sh
+npm test
 ```
 
 ## The performance gate (ADR 0001)
