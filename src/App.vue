@@ -307,7 +307,14 @@ onBeforeUnmount(() => {
         @page-change="(i: number) => (currentPage = i)"
         @error="(m: string) => (error = m)"
       />
-      <MarkdownViewer v-if="markdown !== null" ref="mdViewer" :html="markdown" :zoom="zoom" @zoom-by="zoomBy" />
+      <MarkdownViewer
+        v-if="markdown !== null"
+        ref="mdViewer"
+        class="md-overlay"
+        :html="markdown"
+        :zoom="zoom"
+        @zoom-by="zoomBy"
+      />
       <div v-if="!doc && markdown === null" class="empty">
         Drop a PDF, Markdown file or image here or press “Open…”
       </div>
@@ -399,6 +406,13 @@ button.active {
   flex: 1;
   display: flex;
   min-height: 0;
+}
+/* PdfViewer stays mounted (and flex:1) while a Markdown file is open; cover it instead
+   of sharing the row with it. */
+.md-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
 }
 .empty {
   position: absolute;
